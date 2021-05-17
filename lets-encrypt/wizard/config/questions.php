@@ -76,6 +76,7 @@ $this->fields = $this->fields + array(
 	        'tooltip'   => __( "If your site is without www, it is recommended to add the www domain to your certificate as well (and vice versa).", "really-simple-ssl").' '.__("You should have the www domain pointed to the same website as the non-www domain.", 'really-simple-ssl' ),
 	        'tooltip-position' => 'after',
 	        'option_text' => __("Include alias domain too?", 'really-simple-ssl'),
+	        'callback_condition' => 'NOT rsssl_is_subdomain',
         ),
 
         'other_host_type' => array(

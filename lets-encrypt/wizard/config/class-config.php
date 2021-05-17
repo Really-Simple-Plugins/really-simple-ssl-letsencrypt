@@ -10,9 +10,9 @@ if ( ! class_exists( "rsssl_config" ) ) {
         public $pages;
         public $warning_types;
         public $yes_no;
-        public $countries;
-        public $regions;
-        public $languages;
+        public $supported_hosts;
+        public $not_local_certificate_hosts;
+        public $no_renewal_needed;
 
         function __construct() {
             if ( isset( self::$_this ) ) {
@@ -29,7 +29,19 @@ if ( ! class_exists( "rsssl_config" ) ) {
                 'no'  => __( 'No', 'really-simple-ssl' ),
             );
 
-//            $this->languages = $this->get_supported_languages();
+            $this->no_renewal_needed = array(
+                'cloudways',
+	            'cpanel:autossl',
+            );
+
+            $this->supported_hosts = array(
+            	'none' => __('Not listed, proceed with installation', 'really-simple-ssl'),
+            	'cloudways' => 'CloudWays',
+            );
+
+            $this->not_local_certificate_hosts = array(
+            	'cloudways'
+            );
 
 
             /* config files */

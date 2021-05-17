@@ -27,43 +27,12 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 			add_action( 'rsssl_after_save_lets-encrypt_option', array( $this, 'after_save_wizard_option' ), 10, 4 );
 			add_action( 'rsssl_after_saved_all_fields', array( $this, 'after_saved_all_fields' ), 10, 1 );
 			add_action( 'rsssl_last_step', array( $this, 'last_step_callback' ) );
-			add_filter( 'rsssl_steps', array( $this, 'add_condition_actions' ) );
 
-			require_once(plugin_dir_path(__FILE__) . 'functions.php');
 		}
 
 		static function this() {
 			return self::$_this;
 		}
-
-		public function add_condition_actions($steps){
-		    $index = array_search('installation',array_column($steps['lets-encrypt'],'id'));
-			$index++;
-			if (rsssl_cpanel_api_supported()) {
-				$steps['lets-encrypt'][$index]['actions'] = array(
-					array(
-						'description' => __("Attempting to install certificate using AutoSSL...", "really-simple-ssl"),
-						'action'=> 'attempt_cpanel_autossl_install',
-						'attempts' => 1,
-					),
-					array(
-						'description' => __("Attempting to install certificate...", "really-simple-ssl"),
-						'action'=> 'attempt_cpanel_install',
-						'attempts' => 1,
-					),
-				);
-            } else {
-				$steps['lets-encrypt'][$index]['actions'] = array(
-					array(
-						'description' => __("Searching for link to SSL installation page on your server...", "really-simple-ssl"),
-						'action'=> 'search_ssl_installation_url',
-						'attempts' => 1,
-					),
-				);
-            }
-
-		    return $steps;
-        }
 
 		/**
 		 *
@@ -75,6 +44,7 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 			if (empty($step)) return;
 
 			$action_list = RSSSL_LE()->config->steps['lets-encrypt'][$step]['actions'];
+			error_log(print_r($action_list,true));
 			if (count($action_list)==0) return;
 			$actions = array_column($action_list, 'action');
 			$attempts = array_column($action_list, 'attempts');
@@ -142,9 +112,9 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
                                 var current_action_container = $('.rsssl_action_'+current_action);
                                 current_action_container.html(msg);
                                 current_action_container.addClass('rsssl-'+response.status);
-                                rsssl_set_status(response.status);
 
                                 if (response.action === 'finalize' ) {
+                                    rsssl_set_status(response.status);
                                     //remove remaining list items.
                                     for (var action in actions) {
                                         if (actions.hasOwnProperty(action)) {
@@ -164,6 +134,7 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
                                         rsssl_set_progress(msg);
                                     }, 100 );
                                 } else if (response.action === 'continue' || response.action === 'skip' ) {
+                                    rsssl_set_status(response.status);
                                     //skip:  drop previous completely, skip to next.
                                     if (response.action === 'skip') {
                                         $('.rsssl_action_'+current_action).hide();
@@ -232,8 +203,8 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 
                     function rsssl_set_status(status){
                         if (status)
-                            if ($('.'+status).length) {
-                                $('.'+status).removeClass('rsssl-hidden');
+                            if ($('.rsssl-'+status).length) {
+                                $('.rsssl-'+status).removeClass('rsssl-hidden');
                             }
                     }
 
@@ -506,7 +477,7 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 		 * @return int
 		 */
 		public function get_next_not_empty_step( $page, $step ) {
-			if ( ! RSSSL_LE()->field->step_has_fields( $page, $step ) ) {
+		    if ( ! RSSSL_LE()->field->step_has_fields( $page, $step ) ) {
 				if ( $step >= $this->total_steps( $page ) ) {
 					return $step;
 				}
@@ -732,6 +703,7 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 			$args_menu['steps'] = "";
 			for ($i = 1; $i <= $this->total_steps($page); $i++)
 			{
+				if ($this->step_is_empty($page, $i)) continue;
 				$args['title'] = $i . '. ' . RSSSL_LE()->config->steps[$page][$i]['title'];
 				$args['active'] = ($i == $active_step) ? 'active' : '';
 				$args['completed'] = $this->required_fields_completed($page, $i, false) ? 'complete' : 'incomplete';
@@ -740,7 +712,6 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 				$step_html = RSSSL()->really_simple_ssl->get_template( 'step.php', $path = rsssl_le_wizard_path , $args);
 				$step_html = $this->process_args($step_html, $args);
 				$args_menu['steps'] .= $step_html;
-
 			}
 			$args_menu['percentage-complete'] = $this->wizard_percentage_complete($page, $active_step);
 			$args_menu['title'] = !empty( $wizard_title ) ? '<div class="rsssl-wizard-subtitle"><h2>' . $wizard_title . '</h2></div>': '' ;
@@ -859,9 +830,17 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 		 * */
 
 		public function section_is_empty( $page, $step, $section ) {
-			$section_compare = $this->get_next_not_empty_section( $page, $step,
-				$section );
+			$section_compare = $this->get_next_not_empty_section( $page, $step, $section );
 			if ( $section != $section_compare ) {
+				return true;
+			}
+
+			return false;
+		}
+
+		public function step_is_empty( $page, $step ) {
+			$step_compare = $this->get_next_not_empty_step( $page, $step );
+			if ( $step != $step_compare ) {
 				return true;
 			}
 
@@ -1013,13 +992,17 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 		 * The step function returns the posted or get step, which may lag behind if next is clicked.
          * @return int
 		 */
+
 		public function actual_step(){
 		    $step = $this->step();
 		    if (isset($_POST['rsssl-next'])) {
-		        $step++;
+			    $step++;
+			    $step = $this->get_next_not_empty_step('lets-encrypt', $step);
+			    error_log("actual step $step");
             }
 			if (isset($_POST['rsssl-previous'])) {
 				$step--;
+				$step = $this->get_previous_not_empty_step('lets-encrypt', $step);
 			}
 			return $step;
 		}

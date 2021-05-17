@@ -38,10 +38,26 @@ function rsssl_cpanel_api_supported(){
 	return rsssl_is_cpanel() && file_exists("/usr/local/cpanel/php/cpanel.php");
 }
 
+/**
+ * https://stackoverflow.com/questions/26927248/how-to-detect-servers-control-panel-type-with-php
+ * @return false
+ */
 function rsssl_is_plesk(){
-	return false;
+	if ( is_dir( '/usr/local/psa' ) ) {
+		return true;
+	} else {
+		return false;
+	}
 }
 
+/**
+ * check if this is a server that is not automatically detected
+ * @return bool
+ */
+function rsssl_is_other(){
+	$response = RSSSL_LE()->letsencrypt_handler->server_software();
+	return $response->status === 'warning';
+}
 /**
  * @param string $item
  */
@@ -99,21 +115,43 @@ if ( ! function_exists( 'rsssl_get_value' ) ) {
      * @return array|bool|mixed|string
      */
 
-    function rsssl_get_value(
-        $fieldname, $use_default = true
-    ) {
-        if ( ! isset( RSSSL_LE()->config->fields[ $fieldname ] ) ) {
-            return false;
-        }
+	function rsssl_get_value(
+		$fieldname, $use_default = true
+	) {
+		$default = false;
+		$fields = get_option( 'rsssl_options_lets-encrypt' );
+		if ($use_default) {
+			if ( ! isset( RSSSL_LE()->config->fields[ $fieldname ] ) ) {
+				return false;
+			}
+			$default = ( isset( RSSSL_LE()->config->fields[ $fieldname ]['default'] ) ) ? RSSSL_LE()->config->fields[ $fieldname ]['default'] : '';
+		}
 
-        $page = RSSSL_LE()->config->fields[ $fieldname ]['source'];
-        $fields = get_option( 'rsssl_options_' . $page );
-        $default = ( $use_default && $page && isset( RSSSL_LE()->config->fields[ $fieldname ]['default'] ) )
-            ? RSSSL_LE()->config->fields[ $fieldname ]['default'] : '';
+		$value   = isset( $fields[ $fieldname ] ) ? $fields[ $fieldname ] : $default;
+		return $value;
+	}
+}
 
-        $value   = isset( $fields[ $fieldname ] ) ? $fields[ $fieldname ] : $default;
-        return $value;
-    }
+if ( !function_exists('rsssl_do_local_lets_encrypt_install')) {
+	/**
+	 * Check if the setup requires local certificate generation
+	 * @return bool
+	 */
+	function rsssl_do_local_lets_encrypt_install() {
+		error_log("test local install");
+		if ( rsssl_cpanel_api_supported() || rsssl_is_plesk() ) {
+			return true;
+		}
+
+		$not_local_cert_hosts = RSSSL_LE()->config->not_local_certificate_hosts;
+		$current_host         = rsssl_get_other_host();
+		if ( in_array( $current_host, $not_local_cert_hosts ) ) {
+			error_log("no local install");
+			return false;
+		}
+
+		return true;
+	}
 }
 
 if ( ! function_exists( 'rsssl_notice' ) ) {
@@ -246,8 +284,8 @@ if ( ! function_exists( 'rsssl_array_filter_multidimensional' ) ) {
     }
 }
 
-if ( ! function_exists( 'rsssl_get_non_www_domain' ) ) {
-    function rsssl_get_non_www_domain() {
+if ( ! function_exists( 'rsssl_get_domain' ) ) {
+    function rsssl_get_domain() {
 
         //Get current domain
         $domain = site_url();
@@ -255,9 +293,13 @@ if ( ! function_exists( 'rsssl_get_non_www_domain' ) ) {
         $parse = parse_url($domain);
         $domain = $parse['host'];
 
-        $domain = str_replace(array('http://', 'https://', 'www.'), '', $domain);
+        $domain = str_replace(array('http://', 'https://' ), '', $domain);
 
         return $domain;
     }
+}
+
+function rsssl_get_other_host(){
+	return rsssl_get_value('other_host_type', false);
 }
 

@@ -23,6 +23,7 @@ class rsssl_letsencrypt_handler {
 			wp_die( sprintf( __( '%s is a singleton class and you cannot create a second instance.', 'really-simple-ssl' ), get_class( $this ) ) );
 		}
 		add_action( 'rsssl_before_save_lets-encrypt_option', array( $this, 'before_save_wizard_option' ), 10, 4 );
+		add_action( 'rsssl_le_activation' , array( $this, 'cleanup_on_activation'));
 
 		$this->installation_sequence = array_column( RSSSL_LE()->config->steps['lets-encrypt'], 'id');
 		$this->key_directory = $this->key_directory();
@@ -45,13 +46,32 @@ class rsssl_letsencrypt_handler {
 //		// Optional configs
 //		//\LE_ACME2\Utilities\Certificate::enableFeatureOCSPMustStaple();
 //		\LE_ACME2\Order::setPreferredChain(\LE_ACME2\Order::IDENTRUST_ISSUER_CN);
-
         $this->subjects = $this->get_subjects();
 		self::$_this = $this;
 	}
 
 	static function this() {
 		return self::$_this;
+	}
+
+	/**
+	 * Cleanup. If user did not consent to storage, all password fields should be removed on activation, unless they're needed for renewals
+	 */
+	public function cleanup_on_activation(){
+		if (!current_user_can('manage_options')) return;
+
+		$delete_credentials = !rsssl_get_value('store_credentials');
+		if ( !$this->certificate_requires_install_on_renewal() || $delete_credentials ) {
+			$fields = RSSSL_LE()->config->fields;
+			$fields = array_filter($fields, function($i){
+				return isset( $i['type'] ) && $i['type'] === 'password';
+			});
+			$options = get_option( 'rsssl_options_lets-encrypt' );
+			foreach ($fields as $fieldname => $field ) {
+				unset($options[$fieldname]);
+			}
+			update_option( 'rsssl_options_lets-encrypt', $options );
+		}
 	}
 
 	public function before_save_wizard_option(
@@ -68,6 +88,14 @@ class rsssl_letsencrypt_handler {
 		        rsssl_progress_remove('domain');
             }
         }
+
+		if ($fieldname==='other_host_type'){
+			$not_local_cert_hosts = RSSSL_LE()->config->not_local_certificate_hosts;
+			if ( in_array( $fieldvalue, $not_local_cert_hosts ) ) {
+				rsssl_progress_add('directories');
+				rsssl_progress_add('generation');
+			}
+		}
 
 		if ( $fieldname==='email' ){
 		    if ( !is_email($fieldvalue) ) {
@@ -104,16 +132,14 @@ class rsssl_letsencrypt_handler {
         if (function_exists('wp_get_direct_update_https_url') && !empty(wp_get_direct_update_https_url())) {
         	$url = wp_get_direct_update_https_url();
         } else if ( rsssl_is_cpanel() ) {
-	        require_once( rsssl_le_path . 'cPanel/cPanel.php' );
-	        $cpanel_host = rsssl_get_value('cpanel_host');
-	        $cpanel = new rsssl_cPanel( $cpanel_host );
+	        $cpanel = new rsssl_cPanel();
 	        $url = $cpanel->ssl_installation_url;
         } else {
         	$url = 'https://really-simple-ssl.com/install-ssl-certificate';
         }
 
 	    $action = 'continue';
-	    $status = 'success';
+	    $status = 'warning';
 	    $message = __("Your server requires some manual actions to install the certificate.", "really-simple-ssl").' '.
 	               sprintf(__("Please follow this %slink%s to proceed.", "really-simple-ssl"), '<a target="_blank" href="'.$url.'">', '</a>');
 
@@ -138,12 +164,11 @@ class rsssl_letsencrypt_handler {
 	    return new RSSSL_RESPONSE($status, $action, $message);
     }
 
-
-
     /**
      * Test for server software
 	 * @return RSSSL_RESPONSE
 	 */
+
 	public function server_software(){
 	    $action = 'continue';
 	    $status = 'warning';
@@ -162,16 +187,37 @@ class rsssl_letsencrypt_handler {
 		return new RSSSL_RESPONSE($status, $action, $message);
     }
 
+	/**
+	 * Check if CURL is available
+	 *
+	 * @return RSSSL_RESPONSE
+	 */
+
+    public function curl_exists(){
+	    if(function_exists('curl_init') === false){
+		    $action = 'stop';
+		    $status = 'error';
+		    $message = __("The PHP function CURL is not available on your server, which is required. Please contact your hosting company.", "really-simple-ssl" );
+	    } else {
+		    $action = 'continue';
+		    $status = 'success';
+		    $message = __("The PHP function CURL has successfully been detected.", "really-simple-ssl" );
+	    }
+
+	    return new RSSSL_RESPONSE($status, $action, $message);
+    }
+
     /**
      * Test for server software
 	 * @return RSSSL_RESPONSE
 	 */
 	public function system_check(){
-	    $action = 'stop';
+	    $action = 'continue';
 	    $status = 'error';
 	    $message = __("Your system does not meet the minimum requirements.", "really-simple-ssl" );
 
         if (rsssl_is_cpanel()) {
+	        $action = 'continue';
 	        $status = 'success';
 	        $message = __("CPanel recognized. Possibly the certificate can be installed automatically.", "really-simple-ssl" );
         }
@@ -186,7 +232,6 @@ class rsssl_letsencrypt_handler {
 	 */
     public function get_account(){
 	    $account_email = $this->account_email();
-
         if ( is_email($account_email) ) {
 	        try {
 		        $this->account
@@ -237,7 +282,6 @@ class rsssl_letsencrypt_handler {
 		    $this->get_account();
 
 		    if ( ! Order::exists( $this->account, $this->subjects ) ) {
-			    error_log("order does not exist yet");
 			    try {
 				    $order = Order::create( $this->account, $this->subjects );
 				    $status = 'success';
@@ -307,7 +351,6 @@ class rsssl_letsencrypt_handler {
 						    }
 
 						    if ( ! $success_cert || ! $success_private || ! $success_intermediate ) {
-							    error_log( "not all files" );
 							    $bundle_completed = false;
 						    }
 
@@ -358,19 +401,29 @@ class rsssl_letsencrypt_handler {
 	 * @return bool
 	 */
     public function generated_by_rsssl(){
-	    return get_option('rsssl_le_certificate_generated_by_rsssl');
+	    return get_option('rsssl_le_certificate_generated_by_rsssl')!==false;
     }
 
 	/**
 	 * Check if the certificate can be installed automatically.
 	 */
-    public function certificate_can_auto_install(){
+
+    public function certificate_requires_install_on_renewal(){
+
+    	$install_method = get_option('rsssl_le_certificate_installed_by_rsssl');
+
+	    //if it was never auto installed, we probably can't autorenew.
+	    if ($install_method === false ) {
+		    return false;
+	    }
+
+    	if ( in_array($install_method, RSSSL_LE()->config->no_renewal_needed) ) {
+    		return false;
+	    }
+
+    	// we can only instal if the certificate is up to date
         if ($this->certificate_needs_renewal()) {
             return false;
-        }
-
-        if (rsssl_cpanel_api_supported()) {
-            return true;
         }
 
         return false;
@@ -382,6 +435,7 @@ class rsssl_letsencrypt_handler {
 	 * @return bool
 	 */
     public function certificate_needs_renewal(){
+
 	    $cert_file = get_option('rsssl_certificate_path');
 	    $certificate = file_get_contents($cert_file);
 	    $certificateInfo = openssl_x509_parse($certificate);
@@ -393,108 +447,6 @@ class rsssl_letsencrypt_handler {
 	        return false;
 	    }
     }
-
-	/**
-	 * @return RSSSL_RESPONSE
-	 */
-    public function attempt_cpanel_autossl_install(){
-    	return $this->install('cpanel', 'autossl');
-    }
-	/**
-	 * @return RSSSL_RESPONSE
-	 */
-    public function attempt_cpanel_install(){
-	    return $this->install('cpanel', 'default');
-    }
-
-	/**
-     * Instantiate our installer, and run it.
-     *
-	 * @return string
-	 */
-
-	public function install( $server, $type ='' ){
-	    $attempt_count = intval(get_transient('rsssl_le_install_attempt_count'));
-		$attempt_count++;
-		set_transient('rsssl_le_install_attempt_count', $attempt_count, DAY_IN_SECONDS);
-		if ( $attempt_count>5 ){
-			delete_option("rsssl_le_start_installation");
-			$status = 'error';
-			$action = 'stop';
-			$message = __("The certificate installation was rate limited. Please try again later.",'really-simple-ssl');
-			return new RSSSL_RESPONSE($status, $action, $message);
-		}
-
-		if ($this->is_ready_for('installation')) {
-		    try {
-		    	if ( $server === 'cpanel' ) {
-				    error_log("is cpanel");
-
-				    require_once( rsssl_le_path . 'cPanel/cPanel.php' );
-				    $username = rsssl_get_value('cpanel_username');
-				    $password = $this->decode( rsssl_get_value('cpanel_password') );
-				    $cpanel_host = rsssl_get_value('cpanel_host');
-				    $cpanel = new rsssl_cPanel( $cpanel_host, $username, $password );
-				    $domains = RSSSL_LE()->letsencrypt_handler->get_subjects();
-
-				    if ( $type === 'autossl' ) {
-					    $response = $cpanel->enableAutoSSL($domains);
-					    if ( $response->status === 'success' ) {
-						    update_option('rsssl_le_certificate_installed_by_rsssl', true);
-					    }
-					    //set to success even if error, so the bullet is green, as we will then attempt default installation
-					    $status = $response->status;
-					    $action = $response->action;
-					    $message = $response->message;
-                    } else {
-					    $response_arr = array();
-					    if ( is_array($domains) && count($domains)>0 ) {
-						    foreach ($domains as $domain ) {
-						    	$response = $cpanel->installSSL($domain);
-							    $response_arr[] = $response;
-						    }
-					    }
-					    $message = '';
-					    $status = '';
-					    foreach ( $response_arr as $response_item ) {
-						    $status = $response_item->status;
-						    $action = $response_item->action;
-						    $message .= '<br>'.$response_item->message;
-
-						    //overwrite if error.
-						    if ($response_item->status !== 'success' ) {
-							    error_log("response err");
-							    $status = $response_item->status;
-							    $action = $response_item->action;
-						    }
-					    }
-					    if ( $status === 'success' ) {
-						    update_option('rsssl_le_certificate_installed_by_rsssl', true);
-					    }
-                    }
-
-				    if ( $status === 'success' ) {
-					    delete_option("rsssl_le_start_installation");
-				    }
-		    	} else {
-				    $status = 'error';
-				    $action = 'stop';
-				    $message = __("Not recognized server.", "really-simple-ssl");
-			    }
-		    } catch (Exception $e) {
-		        error_log(print_r($e, true));
-			    $status = 'error';
-			    $action = 'stop';
-			    $message = __("Installation failed.", "really-simple-ssl");
-		    }
-		} else {
-			$status = 'error';
-			$action = 'stop';
-			$message = __("The system is not ready for the installation yet. Please run the wizard again.", "really-simple-ssl");
-		}
-
-		return new RSSSL_RESPONSE($status, $action, $message);
-	}
 
 
 	/**
@@ -538,10 +490,18 @@ class rsssl_letsencrypt_handler {
 	 */
 	public function get_subjects(){
 		$subjects = array();
-		$domain_no_www = rsssl_get_non_www_domain();
-	    $subjects[] = $domain_no_www;
-	    if (rsssl_get_value('include_www')) {
-		    $subjects[] = 'www.'.rsssl_get_value('domain');
+		$domain = rsssl_get_domain();
+		$subjects[] = $domain;
+
+		//main is www.
+		if ( strpos( $domain, 'www.' ) !== false ) {
+			$alias_domain = str_replace( 'www.', '', $domain );
+		} else {
+			$alias_domain = str_replace( array( 'http://', 'https://' ), array( 'http://www.', 'https://www.' ), $domain );
+		}
+
+	    if (rsssl_get_value('include_alias')) {
+		    $subjects[] = $alias_domain;
 	    }
 	    return $subjects;
 	}
@@ -760,6 +720,96 @@ class rsssl_letsencrypt_handler {
 		}
 	}
 
+
+	/**
+	 * Check if the alias domain is available
+	 *
+	 * @return RSSSL_RESPONSE
+	 */
+	public function alias_domain_available(){
+		//write a test file to the uploads directory
+		$uploads    = wp_upload_dir();
+		$upload_dir = trailingslashit($uploads['basedir']);
+		$upload_url = trailingslashit($uploads['baseurl']);
+		$file_content = false;
+		$status = 404;
+
+		$domain = rsssl_get_domain();
+		//main is www.
+		if ( strpos( $domain, 'www.' ) !== false ) {
+			$is_www = true;
+			$alias_domain = str_replace( 'www.', '', $domain );
+		} else {
+			$is_www = false;
+			$alias_domain = str_replace( array( 'http://', 'https://' ), array( 'http://www.', 'https://www.' ), $domain );
+		}
+		if ( $is_www ) {
+			$message =  __("Please check if the non www version of your site also points to this website.", "really-simple-ssl" );
+		} else {
+			$message = __("Please check if the www version of your site also points to this website.", "really-simple-ssl" );
+		}
+		$error_message = __( "Could not verify alias domain.", "really-simple-ssl") .' '. $message.' '. __( "If this is not the case, dont' add this variant to your certificate.", "really-simple-ssl");
+
+
+		//get cached status first.
+		$cached_status = get_transient('rsssl_alias_domain_available');
+		if ( $cached_status ) {
+			if ( $cached_status === 'available' ) {
+				$status  = 'success';
+				$action  = 'continue';
+				$message = __( "Successfully verified alias domain.", "really-simple-ssl" );
+			} else {
+				$status  = 'warning';
+				$action  = 'continue';
+				$message = $error_message;
+			}
+			return new RSSSL_RESPONSE($status, $action, $message);
+		}
+
+		if ( ! file_exists( $upload_dir . 'rsssl' ) ) {
+			mkdir( $upload_dir . 'rsssl' );
+		}
+
+		$test_string = 'file to test alias domain existence';
+		$test_file = $upload_dir . 'rsssl/test.txt';
+		file_put_contents($test_file, $test_string );
+		$test_url = $upload_url . 'rsssl/test.txt';
+
+		if ( ! file_exists( $test_file ) ) {
+			$status = 'error';
+			$action = 'stop';
+			$message = __("Could not create test folder and file.", "really-simple-ssl").' '.
+			           __("Please create a folder 'rsssl' in the uploads directory, with 644 permissions.", "really-simple-ssl");
+		} else {
+			set_transient('rsssl_alias_domain_available', 'not-available', 30 * 'MINUTE_IN_SECONDS' );
+			$alias_test_url = str_replace( $domain, $alias_domain, $test_url );
+			$response       = wp_remote_get( $alias_test_url );
+			if ( is_array( $response ) ) {
+				$status       = wp_remote_retrieve_response_code( $response );
+				$file_content = wp_remote_retrieve_body( $response );
+			}
+
+			if ( $status !== 200 ) {
+				$status  = 'warning';
+				$action  = 'retry';
+				$message = $error_message.' '.sprintf( __( "Error code %s", "really-simple-ssl" ), $status );
+			} else {
+				if ( ! is_wp_error( $response ) && ( strpos( $file_content, $test_string ) !== false ) ) {
+					$status  = 'success';
+					$action  = 'continue';
+					$message = __( "Successfully verified alias domain.", "really-simple-ssl" );
+					set_transient('rsssl_alias_domain_available', 'available', 30 * 'MINUTE_IN_SECONDS' );
+				} else {
+					$status  = 'warning';
+					$action  = 'retry';
+					$message = $error_message;
+				}
+			}
+		}
+
+		return new RSSSL_RESPONSE($status, $action, $message);
+	}
+
 	/**
 	 * Check if exists, create ssl/certs directory above the wp root if not existing
 	 * @return bool|string
@@ -809,6 +859,73 @@ class rsssl_letsencrypt_handler {
 
 	}
 
+	/**
+	 * Generic SSL cert installation function
+	 * @param $server
+	 * @param $type
+	 *
+	 * @return RSSSL_RESPONSE
+	 */
+	public function cron_renew_installation($server, $type) {
+		//autodetect if empty
+		if (!$server) {
+			$install_method = get_option('rsssl_le_certificate_installed_by_rsssl');
+			$data = explode($install_method, ':');
+			$server = isset($data[0]) ? $data[0] : false;
+			$type = isset($data[1]) ? $data[1] : false;
+		}
+
+		$attempt_count = intval(get_transient('rsssl_le_install_attempt_count'));
+		$attempt_count++;
+		set_transient('rsssl_le_install_attempt_count', $attempt_count, DAY_IN_SECONDS);
+		if ( $attempt_count>10 ){
+			delete_option("rsssl_le_start_installation");
+			$status = 'error';
+			$action = 'stop';
+			$message = __("The certificate installation was rate limited. Please try again later.",'really-simple-ssl');
+			return new RSSSL_RESPONSE($status, $action, $message);
+		}
+
+		if (RSSSL_LE()->letsencrypt_handler->is_ready_for('installation')) {
+			try {
+				if ( $server === 'cpanel' ) {
+					$response = rsssl_install_cpanel_default();
+
+					if ( $response->status === 'success' ) {
+						delete_option( "rsssl_le_start_installation" );
+					}
+				} else if ( $server === 'plesk') {
+					$response = rsssl_plesk_install();
+					if ( $response->status === 'success' ) {
+						delete_option( "rsssl_le_start_installation" );
+					}
+				} else {
+					$status = 'error';
+					$action = 'stop';
+					$message = __("Not recognized server.", "really-simple-ssl");
+				}
+			} catch (Exception $e) {
+				error_log(print_r($e, true));
+				$status = 'error';
+				$action = 'stop';
+				$message = __("Installation failed.", "really-simple-ssl");
+			}
+		} else {
+			$status = 'error';
+			$action = 'stop';
+			$message = __("The system is not ready for the installation yet. Please run the wizard again.", "really-simple-ssl");
+		}
+
+		return new RSSSL_RESPONSE($status, $action, $message);
+	}
+
+	/**
+	 * Cleanup the default message a bit
+	 *
+	 * @param $msg
+	 *
+	 * @return string|string[]
+	 */
 	private function cleanup_error_message($msg){
 		return str_replace(array(
 			'Refer to sub-problems for more information.',
@@ -842,7 +959,17 @@ class rsssl_letsencrypt_handler {
 		return 'rsssl_'.$key;
 	}
 
-    private function decode($string){
+	/**
+	 * Decode a string
+	 * @param $string
+	 *
+	 * @return string
+	 */
+    public function decode($string){
+		if ( !wp_doing_cron() && !current_user_can('manage_options') ) {
+			return '';
+		}
+
 		if (strpos( $string , 'rsssl_') !== FALSE ) {
 			$key = $this->get_key();
 			$string = str_replace('rsssl_', '', $string);
@@ -887,12 +1014,14 @@ class RSSSL_RESPONSE
 	public $message;
 	public $action;
 	public $status;
+	public $output;
 
-	public function __construct($status, $action, $message)
+	public function __construct($status, $action, $message, $output = false )
 	{
 	    $this->status = $status;
 	    $this->action = $action;
 	    $this->message = $message;
+	    $this->output = $output;
 	}
 
 }

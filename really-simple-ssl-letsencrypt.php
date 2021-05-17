@@ -25,11 +25,24 @@
 defined('ABSPATH') or die("you do not have access to this page!");
 define('rsssl_beta_addon', true);
 if (!defined('rsssl_file')) define('rsssl_file', __FILE__);
+if (!defined('rsssl_le_file')) define('rsssl_le_file', __FILE__);
 
 add_action('plugins_loaded', 'rsssl_load_beta_addon', 8);
 function rsssl_load_beta_addon() {
 	require_once( trailingslashit( plugin_dir_path( __FILE__ ) ) . 'lets-encrypt/letsencrypt.php' );
 }
 
+
+
+if (!function_exists('rsssl_le_activation_check')) {
+	/**
+	 * Checks if the plugin can safely be activated, at least php 5.6 and wp 4.8
+	 */
+	function rsssl_le_activation_check()
+	{
+		update_option("rsssl_activated_plugin", true);
+	}
+	register_activation_hook( __FILE__, 'rsssl_le_activation_check' );
+}
 
 

@@ -7,7 +7,7 @@ Tested up to: 5.7
 Requires PHP: 7.0
 Stable tag: 1.0
 
-No setup required! ~~You only need an SSL certificate~~... and this plugin will do the rest.
+No setup required! You only ~~need~~ get an SSL certificate~~... and this plugin will do the rest.
 
 == Description ==
 Really Simple SSL automatically detects your settings and configures your website to run over https.

@@ -23,8 +23,9 @@ class rsssl_letsencrypt_handler {
 			wp_die( sprintf( __( '%s is a singleton class and you cannot create a second instance.', 'really-simple-ssl' ), get_class( $this ) ) );
 		}
 		add_action( 'rsssl_before_save_lets-encrypt_option', array( $this, 'before_save_wizard_option' ), 10, 4 );
-		add_action( 'rsssl_le_activation' , array( $this, 'cleanup_on_ssl_activation'));
-		add_action( 'rsssl_le_activation' , array( $this, 'plugin_activation_actions'));
+		add_action( 'rsssl_le_activation', array( $this, 'cleanup_on_ssl_activation'));
+		add_action( 'rsssl_le_activation', array( $this, 'plugin_activation_actions'));
+		add_filter( 'rsssl_notices', array( $this, 'get_notices_list'), 30, 1 );
 
 		$this->installation_sequence = array_column( RSSSL_LE()->config->steps['lets-encrypt'], 'id');
 		$this->key_directory = $this->key_directory();
@@ -55,6 +56,72 @@ class rsssl_letsencrypt_handler {
 		return self::$_this;
 	}
 
+	/**
+	 * Show notice if certificate needs to be renewed.
+	 *
+	 * @param array $notices
+	 *
+	 * @return array
+	 */
+	public function get_notices_list($notices) {
+		if ( RSSSL_LE()->letsencrypt_handler->generated_by_rsssl() ) {
+			$valid = RSSSL()->rsssl_certificate->is_valid();
+			//we have now renewed the cert info transient
+			$certinfo = get_transient('rsssl_certinfo');
+			$end_date = isset($certinfo['validTo_time_t']) ? $certinfo['validTo_time_t'] : false;
+
+			//if the certificate expires within the grace period, allow renewal
+			//e.g. expiry date 30 may, now = 10 may => grace period 9 june.
+			$expiry_date = date( get_option('date_format'), $end_date );
+			$renew_link = rsssl_settings_page();
+			$link_open = '<a href="'.$renew_link.'" target="_blank">';
+
+
+			$notices['certificate_renewal'] = array(
+				'condition' => array( 'rsssl_ssl_enabled' ),
+				'callback'  => 'RSSSL_LE()->letsencrypt_handler->certificate_about_to_expire',
+				'score'     => 10,
+				'output'    => array(
+					'false'     => array(
+						'msg'  => sprintf( __( "Your certificate is valid to: %s", "really-simple-ssl-pro" ), $expiry_date ),
+						'icon' => 'success'
+					),
+					'true' => array(
+						'msg'  => sprintf( __( "Your certificate will expire on %s. You can renew it %shere%s.", "really-simple-ssl-pro" ), $expiry_date, $link_open, '</a>' ),
+						'icon' => 'open',
+						'plusone' => true,
+					),
+				),
+			);
+
+			$notices['certificate_installation'] = array(
+				'condition' => array( 'rsssl_ssl_enabled' ),
+				'callback'  => 'RSSSL_LE()->letsencrypt_handler->installation_failed',
+				'score'     => 10,
+				'output'    => array(
+					'true' => array(
+						'msg'  => sprintf( __( "The automatic installation of your certificate has failed. Please check your credentials, and retry the %sinstallation%s.", "really-simple-ssl-pro" ), '<a href="'.rsssl_settings_page().'">', '</a>' ),
+						'icon' => 'open',
+						'plusone' => true,
+					),
+				),
+			);
+		}
+
+		return $notices;
+	}
+
+	/**
+	 * Check if we have an installation failed state.
+	 * @return bool
+	 */
+	public function installation_failed(){
+		$installation_active = get_option("rsssl_le_start_installation");
+		$installation_failed = get_option("rsssl_installation_error");
+
+		return $installation_active && $installation_failed;
+	}
+
 	public function plugin_activation_actions(){
 		if (get_option('rsssl_activated_plugin')) {
 			//do some actions
@@ -68,9 +135,8 @@ class rsssl_letsencrypt_handler {
 	 */
 	public function cleanup_on_ssl_activation(){
 		if (!current_user_can('manage_options')) return;
-
 		$delete_credentials = !rsssl_get_value('store_credentials');
-		if ( !$this->certificate_requires_install_on_renewal() || $delete_credentials ) {
+		if ( !$this->certificate_automatic_install_possible() || !$this->certificate_install_required() || $delete_credentials ) {
 			$fields = RSSSL_LE()->config->fields;
 			$fields = array_filter($fields, function($i){
 				return isset( $i['type'] ) && $i['type'] === 'password';
@@ -99,8 +165,7 @@ class rsssl_letsencrypt_handler {
         }
 
 		if ($fieldname==='other_host_type'){
-			$not_local_cert_hosts = RSSSL_LE()->config->not_local_certificate_hosts;
-			if ( in_array( $fieldvalue, $not_local_cert_hosts ) ) {
+			if ( !rsssl_do_local_lets_encrypt_generation() ) {
 				rsssl_progress_add('directories');
 				rsssl_progress_add('generation');
 			}
@@ -137,15 +202,27 @@ class rsssl_letsencrypt_handler {
 	 */
 
     public function search_ssl_installation_url(){
+    	//start with most generice, then more specific if possible.
+	    $url = 'https://really-simple-ssl.com/install-ssl-certificate';
+	    $host = 'enter-your-dashboard-url-here';
 
-        if (function_exists('wp_get_direct_update_https_url') && !empty(wp_get_direct_update_https_url())) {
-        	$url = wp_get_direct_update_https_url();
-        } else if ( rsssl_is_cpanel() ) {
-	        $cpanel = new rsssl_cPanel();
-	        $url = $cpanel->ssl_installation_url;
-        } else {
-        	$url = 'https://really-simple-ssl.com/install-ssl-certificate';
-        }
+	    if (function_exists('wp_get_direct_update_https_url') && !empty(wp_get_direct_update_https_url())) {
+		    $url = wp_get_direct_update_https_url();
+	    }
+
+	    if ( rsssl_is_cpanel() ) {
+		    $cpanel = new rsssl_cPanel();
+		    $host = $cpanel->cpanel_host;
+		    $url = $cpanel->ssl_installation_url;
+	    }
+
+	    $hosting_company = rsssl_get_other_host();
+	    if ( $hosting_company && $hosting_company !== 'none' ) {
+		    $hosting_specific_link = RSSSL_LE()->config->hosts[$hosting_company]['ssl_installation_link'];
+		    if ($hosting_specific_link) {
+			    $url = str_replace('{host}', $host, $hosting_specific_link);
+		    }
+	    }
 
 	    $action = 'continue';
 	    $status = 'warning';
@@ -186,6 +263,19 @@ class rsssl_letsencrypt_handler {
 	    }
 	    return new RSSSL_RESPONSE($status, $action, $message);
     }
+
+	public function certificate_about_to_expire(){
+		$valid = RSSSL()->rsssl_certificate->is_valid();
+		//we have now renewed the cert info transient
+		$certinfo = get_transient('rsssl_certinfo');
+		$end_date = isset($certinfo['validTo_time_t']) ? $certinfo['validTo_time_t'] : false;
+		$thirty_days_time = strtotime('+30 days');
+		if ( $thirty_days_time < $end_date ) {
+			return false;
+		} else {
+			return true;
+		}
+	}
 
     /**
      * Test for server software
@@ -427,27 +517,35 @@ class rsssl_letsencrypt_handler {
 	    return get_option('rsssl_le_certificate_generated_by_rsssl')!==false;
     }
 
+
+	public function certificate_automatic_install_possible(){
+
+		$install_method = get_option('rsssl_le_certificate_installed_by_rsssl');
+
+		//if it was never auto installed, we probably can't autorenew.
+		if ($install_method === false ) {
+			return false;
+		} else {
+			return false;
+		}
+    }
+
 	/**
 	 * Check if the certificate can be installed automatically.
+	 *
+	 *     	// we can only instal if the certificate is up to date
+	if ($this->certificate_needs_renewal()) {
+	return false;
+	}
 	 */
 
-    public function certificate_requires_install_on_renewal(){
+    public function certificate_install_required(){
 
     	$install_method = get_option('rsssl_le_certificate_installed_by_rsssl');
-
-	    //if it was never auto installed, we probably can't autorenew.
-	    if ($install_method === false ) {
-		    return false;
-	    }
-
-    	if ( in_array($install_method, RSSSL_LE()->config->no_renewal_needed) ) {
+    	$hosting_company = rsssl_get_other_host();
+    	if ( in_array($install_method, RSSSL_LE()->config->no_installation_renewal_needed) || in_array($hosting_company, RSSSL_LE()->config->no_installation_renewal_needed)) {
     		return false;
 	    }
-
-    	// we can only instal if the certificate is up to date
-        if ($this->certificate_needs_renewal()) {
-            return false;
-        }
 
         return false;
     }
@@ -522,13 +620,13 @@ class rsssl_letsencrypt_handler {
 			if ( strpos( $domain, 'www.' ) !== false ) {
 				$alias_domain = str_replace( 'www.', '', $domain );
 			} else {
-				$alias_domain = str_replace( array( 'http://', 'https://' ), array( 'http://www.', 'https://www.' ), $domain );
+				$alias_domain = 'www.'.$domain;
 			}
-			if (rsssl_get_value('include_alias')) {
+			if (rsssl_get_value( 'include_alias' )) {
 				$subjects[] = $alias_domain;
 			}
 		}
-
+		error_log(print_r($subjects, true));
 	    return $subjects;
 	}
 
@@ -745,7 +843,6 @@ class rsssl_letsencrypt_handler {
 			return false;
 		}
 	}
-
 
 	/**
 	 * Check if the alias domain is available

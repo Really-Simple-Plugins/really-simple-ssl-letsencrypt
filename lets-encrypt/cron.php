@@ -38,7 +38,7 @@ function rsssl_le_maybe_start_renewal(){
 		update_option("rsssl_le_start_renewal", true);
 	}
 
-	if ( RSSSL_LE()->letsencrypt_handler->certificate_requires_install_on_renewal() ) {
+	if ( RSSSL_LE()->letsencrypt_handler->certificate_install_required() ) {
 		update_option("rsssl_le_start_installation", true);
 	}
 }

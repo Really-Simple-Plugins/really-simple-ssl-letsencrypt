@@ -8,13 +8,16 @@ if ( ! class_exists( "rsssl_config" ) ) {
         public $fields = array();
         public $sections;
         public $pages;
+        public $steps;
+        public $hosts;
         public $warning_types;
         public $yes_no;
         public $supported_hosts;
         public $not_local_certificate_hosts;
-        public $no_renewal_needed;
+        public $no_installation_renewal_needed;
 
         function __construct() {
+        	error_log("construct config");
             if ( isset( self::$_this ) ) {
                 wp_die( sprintf( '%s is a singleton class and you cannot create a second instance.',
                     get_class( $this ) ) );
@@ -22,27 +25,38 @@ if ( ! class_exists( "rsssl_config" ) ) {
 
             self::$_this = $this;
 
-
-            //common options type
-            $this->yes_no = array(
-                'yes' => __( 'Yes', 'really-simple-ssl' ),
-                'no'  => __( 'No', 'really-simple-ssl' ),
+            $this->hosts = array(
+            	'cloudways' => array(
+            		'name' => 'CloudWays',
+		            'installation_renewal_required' => false,
+		            'local_ssl_generation_needed' => false,
+		            'cpanel:autossl' => false,
+		            'cpanel:default' => false,
+		            'ssl_installation_link' => '',
+	            ),
+	            'hostgator' => array(
+		            'name' => 'HostGator',
+		            'installation_renewal_required' => false,
+		            'local_ssl_generation_needed' => false,
+		            'cpanel:autossl' => true,
+		            'cpanel:default' => false,
+		            'ssl_installation_link' => 'https://{host}:2083/frontend/paper_lantern/security/tls_status/',
+	            ),
             );
 
-            $this->no_renewal_needed = array(
-                'cloudways',
-	            'cpanel:autossl',
-            );
+	        $this->not_local_certificate_hosts = $this->filter_hosts( 'local_ssl_generation_needed', false);
+            $this->no_installation_renewal_needed = $this->filter_hosts( 'installation_renewal_required', false);
+            $this->no_installation_renewal_needed[] = 'cpanel:autossl';
 
-            $this->supported_hosts = array(
-            	'none' => __('Not listed, proceed with installation', 'really-simple-ssl'),
-            	'cloudways' => 'CloudWays',
-            );
+	        $this->yes_no = array(
+		        'yes' => __( 'Yes', 'really-simple-ssl' ),
+		        'no'  => __( 'No', 'really-simple-ssl' ),
+	        );
 
-            $this->not_local_certificate_hosts = array(
-            	'cloudways'
+	        $this->supported_hosts = array(
+            	'none' => __('I don\'t know, or not listed, proceed with installation', 'really-simple-ssl'),
             );
-
+	        $this->supported_hosts = $this->supported_hosts + wp_list_pluck($this->hosts, 'name');
 
             /* config files */
             require_once( rsssl_le_path . 'wizard/config/steps.php' );
@@ -65,8 +79,44 @@ if ( ! class_exists( "rsssl_config" ) ) {
         }
 
 
-        public function get_section_by_id( $id ) {
+	    /**
+	     * @param array $array
+	     * @param mixed $filter_value
+	     * @param mixed $filter_key
+	     *
+	     * @return array
+	     */
+        public function filter_hosts( $filter_key, $filter_value){
+	        return array_keys(array_filter($this->hosts, function ($var) use ($filter_value, $filter_key) {
+		        return ($var[$filter_key] == $filter_value);
+	        }) );
+        }
 
+
+
+	    /**
+	     * Check if a host has a specific capability
+	     * @param string $function
+	     *
+	     * @return bool
+	     */
+        public function current_host_can( $function ) {
+	        $hosting_company = rsssl_get_other_host();
+	        //if not listed, we assume it can.
+			if ( !$hosting_company || $hosting_company === 'none' ) {
+				return true;
+			}
+	        //we check only for hosts WITHOUT this capability
+	        //by default we assume they can.
+	        $hosts_without_function = RSSSL_LE()->config->filter_hosts( $function, false);
+	        if ( in_array($hosting_company, $hosts_without_function) ) {
+	        	return false;
+	        } else {
+	        	return true;
+	        }
+        }
+
+        public function get_section_by_id( $id ) {
             $steps = $this->steps['lets-encrypt'];
             foreach ( $steps as $step ) {
                 if ( ! isset( $step['sections'] ) ) {
@@ -142,6 +192,7 @@ if ( ! class_exists( "rsssl_config" ) ) {
 
         public function preload_init(){
             $this->fields = apply_filters( 'rsssl_fields_load_types', $this->fields );
+            $this->steps = apply_filters( 'rsssl_steps', $this->steps );
         }
 
         public function init() {

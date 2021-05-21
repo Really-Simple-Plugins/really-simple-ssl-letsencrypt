@@ -16,18 +16,35 @@ if ( ! function_exists( 'rsssl_user_can_manage' ) ) {
     }
 }
 
-if ( !function_exists('rsssl_settings_page') ) {
-    function rsssl_settings_page(){
-            return add_query_arg(array('page' => 'rlrsssl_really_simple_ssl', 'tab' => 'letsencrypt'), admin_url('options-general.php') );
+if ( !function_exists('rsssl_letsencrypt_wizard_url') ) {
+    function rsssl_letsencrypt_wizard_url(){
+    	if (is_multisite() && !is_main_site()) {
+		    return add_query_arg(array('page' => 'rlrsssl_really_simple_ssl', 'tab' => 'letsencrypt'), get_admin_url(get_main_site_id(),'options-general.php') );
+	    } else {
+		    return add_query_arg(array('page' => 'rlrsssl_really_simple_ssl', 'tab' => 'letsencrypt'), admin_url('options-general.php') );
+	    }
     }
 }
 
+/**
+ * Check if we need to use DNS verification
+ * @return bool
+ */
+function rsssl_dns_verification_required(){
+	if ( get_option('rsssl_verification_type')==='DNS' ) {
+		return true;
+	}
+	if ( rsssl_wildcard_certificate_required() ) {
+		return true;
+	}
+
+	return false;
+}
 /**
  * Check if we're on CPanel
  * @return bool
  */
 function rsssl_is_cpanel(){
-	return true;
 	return file_exists("/usr/local/cpanel");
 }
 
@@ -36,8 +53,6 @@ function rsssl_is_cpanel(){
  * @return bool
  */
 function rsssl_cpanel_api_supported(){
-	return true;
-
 	return rsssl_is_cpanel() && file_exists("/usr/local/cpanel/php/cpanel.php");
 }
 
@@ -327,4 +342,77 @@ if ( ! function_exists( 'rsssl_get_domain' ) ) {
 function rsssl_get_other_host(){
 	return rsssl_get_value('other_host_type', false);
 }
+
+function rsssl_insert_after_key($array, $key, $items){
+	$keys = array_keys($array);
+	$key = array_search($key, $keys);
+	$array = array_slice($array, 0, $key, true) +
+	$items +
+	array_slice($array, 3, count($array)-3, true);
+
+	return $array;
+}
+
+if ( !function_exists('rsssl_wildcard_certificate_required') ) {
+	/**
+	 * Check if the site requires a wildcard
+	 *
+	 * @return bool
+	 */
+	function rsssl_wildcard_certificate_required() {
+		if ( ! is_multisite() ) {
+			return false;
+		} else {
+			if ( defined( 'SUBDOMAIN_INSTALL' ) && SUBDOMAIN_INSTALL ) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+	}
+}
+
+/**
+ * Move to add on
+ */
+
+
+
+/**
+ * Override for lets encrypt
+ * Needs to be loaded directly (not in hook)
+ *
+ * @param array $subjects
+ *
+ * @return array
+ */
+
+function rsssl_le_subjects( $subjects ) {
+	if ( rsssl_wildcard_certificate_required() ) {
+		$domain = rsssl_get_domain();
+		//in theory, the main site of a subdomain setup can be a www. domain. But we have to request a certificate without the www.
+		$domain   = str_replace( 'www.', '', $domain );
+		$subjects = array(
+			$domain,
+			'*.' . $domain,
+		);
+	}
+	return $subjects;
+}
+
+add_filter( 'rsssl_le_subjects', 'rsssl_le_subjects' );
+
+function rsssl_maybe_drop_subdomain_test( $steps ) {
+	if ( is_multisite() ) {
+		$index = array_search( 'system-status', array_column( $steps['lets-encrypt'], 'id' ) );
+		$index ++;
+		$actions = $steps['lets-encrypt'][ $index ]['actions'];
+		//get the is_subdomain_setup
+		$sub_index = array_search( 'is_subdomain_setup', array_column( $actions, 'action' ) );
+		unset( $actions[ $sub_index ] );
+		$steps['lets-encrypt'][ $index ]['actions'] = $actions;
+	}
+	return $steps;
+}
+add_filter( 'rsssl_steps', 'rsssl_maybe_drop_subdomain_test' , 20);
 

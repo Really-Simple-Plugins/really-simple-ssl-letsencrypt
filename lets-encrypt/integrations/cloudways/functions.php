@@ -39,19 +39,36 @@ function rsssl_cloudways_add_condition_actions($steps){
 			'description' => __("Retrieving Cloudways server data...", "really-simple-ssl"),
 			'action'=> 'rsssl_cloudways_server_data',
 			'attempts' => 5,
+			'speed' => 'normal',
 		),
 		array(
 			'description' => __("Installing SSL certificate...", "really-simple-ssl"),
 			'action'=> 'rsssl_cloudways_install_ssl',
 			'attempts' => 5,
+			'speed' => 'normal',
 		),
 		array(
 			'description' => __("Enabling auto renew...", "really-simple-ssl"),
 			'action'=> 'rsssl_cloudways_auto_renew',
 			'attempts' => 5,
+			'speed' => 'normal',
 		),
 	);
 
 	return $steps;
 }
 add_filter( 'rsssl_steps', 'rsssl_cloudways_add_condition_actions' );
+
+/**
+ * Drop store credentials field
+ * @param $fields
+ *
+ * @return mixed
+ */
+function rsssl_cloudways_fields($fields){
+	unset($fields['store_credentials']);
+
+	return $fields;
+}
+add_filter( 'rsssl_fields_load_types', 'rsssl_cloudways_fields' );
+

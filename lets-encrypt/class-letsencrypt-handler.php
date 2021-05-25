@@ -50,7 +50,7 @@ class rsssl_letsencrypt_handler {
 		Connector::getInstance()->useStagingServer( false );
 		Logger::getInstance()->setDesiredLevel( Logger::LEVEL_DISABLED );
 
-		Certificate::enableFeatureOCSPMustStaple();
+		//Certificate::enableFeatureOCSPMustStaple();
 		Order::setPreferredChain('ISRG Root X1');
         $this->subjects = $this->get_subjects();
         $this->verify_dns();
@@ -1143,7 +1143,7 @@ class rsssl_letsencrypt_handler {
 				$status  = 'success';
 				$action  = 'continue';
 				$message = __( "Successfully verified alias domain.", "really-simple-ssl" );
-				set_transient('rsssl_alias_domain_available', 'available', 30 * 'MINUTE_IN_SECONDS' );
+				set_transient('rsssl_alias_domain_available', 'available', 30 * MINUTE_IN_SECONDS );
 			} else {
 				$status  = 'error';
 				$action  = 'stop';

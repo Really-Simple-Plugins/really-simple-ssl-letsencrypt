@@ -886,7 +886,7 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 		    wp_nonce_field('rsssl_nonce', 'rsssl_nonce'); ?>
             <?php
                 $response = RSSSL_LE()->letsencrypt_handler->certificate_status();
-                if ( $response->action !== 'stop' ) {?>
+                if ( $response->action === 'stop' ) {?>
                     <input type="submit" class='button button-primary'
                            value="<?php _e("Go ahead, activate SSL!", "really-simple-ssl"); ?>" id="rsssl_do_activate_ssl"
                            name="rsssl_do_activate_ssl">

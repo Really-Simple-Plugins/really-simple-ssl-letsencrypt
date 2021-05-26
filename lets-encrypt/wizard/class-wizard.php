@@ -118,6 +118,10 @@ if ( ! class_exists( "rsssl_wizard" ) ) {
 			    update_option('rsssl_skip_dns_check', true);
             }
 
+		    if (isset($_POST['rsssl-skip-challenge-directory-request'])) {
+			    update_option('rsssl_skip_challenge_directory_request', true);
+            }
+
 		    if (isset($_POST['rsssl-force-plesk'])) {
 			    update_option('rsssl_force_plesk', true);
             }

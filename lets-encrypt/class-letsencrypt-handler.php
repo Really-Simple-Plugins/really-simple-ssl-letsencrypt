@@ -1153,7 +1153,7 @@ class rsssl_letsencrypt_handler {
 		$status_code = __('no response','really-simple-ssl');
 		$url = site_url('.well-known/acme-challenge/really-simple-ssl-permissions-check.txt');
 
-		$error_message = sprintf(__( "Could not reach challenge directory over %s.", "really-simple-ssl"), $url);
+		$error_message = sprintf(__( "Could not reach challenge directory over %s.", "really-simple-ssl"), '<a target="_blank" href="'.$url.'">'.$url.'</a>');
 		$test_string = 'Really Simple SSL';
 		$folders = $this->directories_without_writing_permissions();
 		if ( !$this->challenge_directory() || count($folders) !==0 ) {
@@ -1170,10 +1170,18 @@ class rsssl_letsencrypt_handler {
 		}
 
 		if ( $status_code !== 200 ) {
-			$status  = 'error';
-			$action  = 'stop';
-			$message = $error_message.' '.sprintf( __( "Error code %s.", "really-simple-ssl" ), $status_code );
-			rsssl_progress_remove('directories');
+			if (get_option('rsssl_skip_challenge_directory_request')) {
+				$status  = 'warning';
+				$action = 'continue';
+				$message = $error_message.' '.sprintf( __( "Error code %s.", "really-simple-ssl" ), $status_code );
+			} else {
+				$status  = 'error';
+				$action = 'stop';
+				$message = $error_message.' '.sprintf( __( "Error code %s.", "really-simple-ssl" ), $status_code );
+				rsssl_progress_remove('directories');
+			}
+
+
 		} else {
 			if ( ! is_wp_error( $response ) && ( strpos( $file_content, $test_string ) !== false ) ) {
 				$status  = 'success';

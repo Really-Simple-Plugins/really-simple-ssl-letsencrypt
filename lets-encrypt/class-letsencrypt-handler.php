@@ -1589,20 +1589,3 @@ class rsssl_letsencrypt_handler {
 
 
 }
-
-class RSSSL_RESPONSE
-{
-	public $message;
-	public $action;
-	public $status;
-	public $output;
-
-	public function __construct($status, $action, $message, $output = false )
-	{
-	    $this->status = $status;
-	    $this->action = $action;
-	    $this->message = $message;
-	    $this->output = $output;
-	}
-
-}

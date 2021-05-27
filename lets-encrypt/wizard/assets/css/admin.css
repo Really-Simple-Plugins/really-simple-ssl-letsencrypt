@@ -8,7 +8,7 @@
   border-radius: 5px;
 }
 .rsssl-dns-field {
-  max-width: 45%;
+  width: 45%;
   border: 1px solid #dedede;
   padding: 5px;
   float: left;

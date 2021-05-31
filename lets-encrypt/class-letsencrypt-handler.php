@@ -90,12 +90,13 @@ class rsssl_letsencrypt_handler {
 			return;
 		}
 
-		//check if editing is blocked.
-		if ( RSSSL()->really_simple_ssl->do_not_edit_htaccess ) {
+		$htaccess = file_get_contents( $htaccess_file );
+
+		//if it's already inserted, skip.
+		if ( strpos($htaccess, 'Really Simple SSL LETS ENCRYPT') !== FALSE ) {
 			return;
 		}
 
-		$htaccess = file_get_contents( $htaccess_file );
 		$htaccess = preg_replace("/#\s?BEGIN\s?Really Simple SSL LETS ENCRYPT.*?#\s?END\s?Really Simple SSL LETS ENCRYPT/s", "", $htaccess);
 		$htaccess = preg_replace("/\n+/", "\n", $htaccess);
 
@@ -409,7 +410,7 @@ class rsssl_letsencrypt_handler {
 	 * @return RSSSL_RESPONSE
 	 */
     public function get_dns_token(){
-	    if ($this->is_ready_for('dns-verification')) {
+	    if (rsssl_is_ready_for('dns-verification')) {
 		    $use_dns        = rsssl_dns_verification_required();
 		    $challenge_type = $use_dns ? Order::CHALLENGE_TYPE_DNS : Order::CHALLENGE_TYPE_HTTP;
 		    if ( $use_dns ) {
@@ -501,7 +502,7 @@ class rsssl_letsencrypt_handler {
 	 */
 
 	public function verify_dns(){
-		if ($this->is_ready_for('generation')) {
+		if (rsssl_is_ready_for('generation')) {
 			update_option('rsssl_le_dns_records_verified', false);
 
 			$tokens = get_option('rsssl_le_dns_tokens');
@@ -568,7 +569,7 @@ class rsssl_letsencrypt_handler {
 //			);
 //		}
 //
-//		if ($this->is_ready_for('generation') ) {
+//		if (rsssl_is_ready_for('generation') ) {
 //			$this->get_account();
 //			$dnsWriter = new class extends AbstractDNSWriter {
 //				public function write( Order $order, string $identifier, string $digest): bool {
@@ -660,7 +661,7 @@ class rsssl_letsencrypt_handler {
 	        }
 	    }
 
-	    if ($this->is_ready_for('generation') ) {
+	    if (rsssl_is_ready_for('generation') ) {
 		    $this->get_account();
 			if ( $use_dns ) {
 				$dnsWriter = new class extends AbstractDNSWriter {
@@ -1014,7 +1015,7 @@ class rsssl_letsencrypt_handler {
 			rsssl_progress_add('dns-verification');
 		}
 
-		if (empty($this->get_not_completed_steps($item))){
+		if (empty(rsssl_get_not_completed_steps($item))){
             return true;
         } else{
             return false;
@@ -1041,29 +1042,13 @@ class rsssl_letsencrypt_handler {
 	}
 
 	public function not_completed_steps_message($step){
-		$not_completed_steps = $this->get_not_completed_steps($step);
+		$not_completed_steps = rsssl_get_not_completed_steps($step);
 		$nice_names = array();
 		foreach ($not_completed_steps as $not_completed_step ) {
 			$index = array_search($not_completed_step, array_column( RSSSL_LE()->config->steps['lets-encrypt'], 'id'));
 			$nice_names[] = RSSSL_LE()->config->steps['lets-encrypt'][$index+1]['title'];
 		}
 		return sprintf(__('Please complete the following step(s) first: %s', "really-simple-ssl"), implode(", ", $nice_names) );
-	}
-
-	private function get_not_completed_steps($item){
-		$sequence = array_column( RSSSL_LE()->config->steps['lets-encrypt'], 'id');
-		//drop all statuses after $item. We only need to know if all previous ones have been completed
-		$index = array_search($item, $sequence);
-		$sequence = array_slice($sequence, 0, $index, true);
-		$not_completed = array();
-		$finished = get_option("rsssl_le_installation_progress", array());
-		foreach ($sequence as $status ) {
-			if (!in_array($status, $finished)) {
-				$not_completed[] = $status;
-			}
-		}
-
-        return $not_completed;
 	}
 
 	/**
@@ -1182,7 +1167,8 @@ class rsssl_letsencrypt_handler {
 	public function challenge_directory_reachable(){
 		$file_content = false;
 		$status_code = __('no response','really-simple-ssl');
-		$url = site_url('.well-known/acme-challenge/really-simple-ssl-permissions-check.txt');
+		//make sure we request over http, otherwise the request might fail if the url is already https.
+		$url = str_replace('https://', 'http://', site_url('.well-known/acme-challenge/really-simple-ssl-permissions-check.txt'));
 
 		$error_message = sprintf(__( "Could not reach challenge directory over %s.", "really-simple-ssl"), '<a target="_blank" href="'.$url.'">'.$url.'</a>');
 		$test_string = 'Really Simple SSL';
@@ -1503,7 +1489,7 @@ class rsssl_letsencrypt_handler {
 			return new RSSSL_RESPONSE($status, $action, $message);
 		}
 
-		if (RSSSL_LE()->letsencrypt_handler->is_ready_for('installation')) {
+		if (rsssl_is_ready_for('installation')) {
 			try {
 				if ( $server === 'cpanel' ) {
 					$response = rsssl_install_cpanel_default();

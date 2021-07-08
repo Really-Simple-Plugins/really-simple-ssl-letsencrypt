@@ -1,16 +1,16 @@
 <?php
 /**
- * Plugin Name: Really Simple SSL Let's Encrypt
+ * Plugin Name: Really Simple SSL Shell Add on
  * Plugin URI: https://really-simple-ssl.com
- * Description: Lightweight plugin without any setup to generate an SSL certificate from Let's encrypt
+ * Description: Add on for Really Simple SSL adding shell functionality to install SSL certificates
  * Version: 1.0
  * Author: Really Simple Plugins
  * Author URI: https://really-simple-plugins.com
  * License: GPL2
- * Text Domain: really-simple-ssl
+ * Text Domain: really-simple-ssl-shell
  * Domain Path: /languages
  */
-/*  Copyright 2020  Really Simple Plugins BV  (email : support@really-simple-ssl.com)
+/*  Copyright 2021  Really Simple Plugins BV  (email : support@really-simple-ssl.com)
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2, as
     published by the Free Software Foundation.
@@ -22,27 +22,13 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-defined('ABSPATH') or die("you do not have access to this page!");
-define('rsssl_beta_addon', true);
-if (!defined('rsssl_file')) define('rsssl_file', __FILE__);
-if (!defined('rsssl_le_file')) define('rsssl_le_file', __FILE__);
+defined('ABSPATH') or die();
 
-add_action('plugins_loaded', 'rsssl_load_beta_addon', 8);
-function rsssl_load_beta_addon() {
-	require_once( trailingslashit( plugin_dir_path( __FILE__ ) ) . 'lets-encrypt/letsencrypt.php' );
-}
+if (!defined('rsssl_shell_path')) define('rsssl_shell_path', trailingslashit(plugin_dir_path(__FILE__)) );
 
-
-
-if (!function_exists('rsssl_le_activation_check')) {
-	/**
-	 * Checks if the plugin can safely be activated, at least php 5.6 and wp 4.8
-	 */
-	function rsssl_le_activation_check()
-	{
-		update_option("rsssl_activated_plugin", true);
+function rsssl_le_load_shell_addon(){
+	if (function_exists('rsssl_letsencrypt_generation_allowed') && rsssl_letsencrypt_generation_allowed() ) {
+		require_once( rsssl_shell_path . 'functions.php' );
 	}
-	register_activation_hook( __FILE__, 'rsssl_le_activation_check' );
 }
-
-
+add_action( 'plugins_loaded', 'rsssl_le_load_shell_addon' );

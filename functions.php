@@ -10,14 +10,17 @@ function rsssl_shell_add_condition_actions($steps){
 	$installation_index = array_search( 'installation', array_column( $steps['lets-encrypt'], 'id' ) );
 	$installation_index ++;
 
-	if ( function_exists('shell_exec') || function_exists('system') || function_exists('passthru') || function_exists('exec') ) {
-		$steps['lets-encrypt'][ $installation_index ]['actions'][]
-			= array(
-			'description' => __( "Attempting to install certificate using shell...", "really-simple-ssl-shell" ),
-			'action'      => 'rsssl_shell_installSSL',
-			'attempts'    => 1,
-		);
+	if ( rsssl_is_cpanel() ) {
+		if ( function_exists('shell_exec') || function_exists('system') || function_exists('passthru') || function_exists('exec') ) {
+			$steps['lets-encrypt'][ $installation_index ]['actions'][]
+				= array(
+				'description' => __( "Attempting to install certificate using shell...", "really-simple-ssl-shell" ),
+				'action'      => 'rsssl_shell_installSSL',
+				'attempts'    => 1,
+			);
+		}
 	}
+
 	return $steps;
 }
 add_filter( 'rsssl_steps', 'rsssl_shell_add_condition_actions' );

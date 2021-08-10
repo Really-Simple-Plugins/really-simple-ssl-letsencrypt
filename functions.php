@@ -7,6 +7,11 @@ defined('ABSPATH') or die();
  * @return mixed
  */
 function rsssl_shell_add_condition_actions($steps){
+
+	if ( !isset($steps['lets-encrypt'])){
+		return $steps;
+	}
+
 	$installation_index = array_search( 'installation', array_column( $steps['lets-encrypt'], 'id' ) );
 	$installation_index ++;
 

@@ -5,7 +5,7 @@ Requires at least: 4.9
 License: GPL2
 Tested up to: 5.7
 Requires PHP: 7.0
-Stable tag: 1.0
+Stable tag: 1.1
 
 == Description ==
 Add on for Really Simple SSL adding shell functionality to install SSL certificates
@@ -15,6 +15,8 @@ Add on for Really Simple SSL adding shell functionality to install SSL certifica
 == Frequently Asked Questions ==
 
 == Changelog ==
+= 1.1 =
+* Fix: catch not set LE step
 
 == Upgrade notice ==
 

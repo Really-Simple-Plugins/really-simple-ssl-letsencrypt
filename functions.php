@@ -40,8 +40,6 @@ function rsssl_shell_installSSL(){
 	if ( rsssl_is_ready_for('installation') ) {
 		$domains = RSSSL_LE()->letsencrypt_handler->get_subjects();
 		if ( function_exists('shell_exec') || function_exists('system') || function_exists('passthru') || function_exists('exec') ) {
-			$response = rsssl_shell_installSSL( $domains );
-
 			if ( is_array($domains) && count($domains)>0 ) {
 				foreach( $domains as $domain ) {
 					$response_item = rsssl_shell_installSSLPerDomain($domain);

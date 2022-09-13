@@ -22,6 +22,7 @@ function rsssl_shell_add_condition_actions($steps){
 				'description' => __( "Attempting to install certificate using shell...", "really-simple-ssl-shell" ),
 				'action'      => 'rsssl_shell_installSSL',
 				'attempts'    => 1,
+				'status'      => 'inactive',
 			);
 		}
 	}

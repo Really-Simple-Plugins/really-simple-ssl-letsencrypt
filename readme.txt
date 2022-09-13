@@ -4,8 +4,8 @@ Tags: SSL, https, force SSL, mixed content, insecure content, secure website, we
 Requires at least: 4.9
 License: GPL2
 Tested up to: 5.7
-Requires PHP: 7.0
-Stable tag: 1.2
+Requires PHP: 7.2
+Stable tag: 1.3
 
 == Description ==
 Add on for Really Simple SSL adding shell functionality to install SSL certificates
@@ -15,6 +15,9 @@ Add on for Really Simple SSL adding shell functionality to install SSL certifica
 == Frequently Asked Questions ==
 
 == Changelog ==
+= 1.3 =
+* New: prepared for 6.0 release
+
 = 1.2 =
 * Fix: infinite loop because of self calling function
 

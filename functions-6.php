@@ -19,12 +19,19 @@ function rsssl_shell_add_condition_actions($fields){
 			];
 		}
 	}
-
 	return $fields;
 }
 add_filter( 'rsssl_fields', 'rsssl_shell_add_condition_actions' );
 
-add_filter("rsssl_run_test", 'rsssl_shell_run_shell_install', 10, 3);
+/**
+ * Run the shell install
+ *
+ * @param $data
+ * @param $test
+ * @param $request
+ *
+ * @return false|mixed|RSSSL_RESPONSE
+ */
 function rsssl_shell_run_shell_install($data, $test, $request){
 	if ( ! current_user_can('manage_security') ) {
 		return new RSSSL_RESPONSE(
@@ -33,11 +40,13 @@ function rsssl_shell_run_shell_install($data, $test, $request){
 			__( "Permission denied.", 'really-simple-ssl' )
 		);
 	}
+
 	if ($test === 'rsssl_shell_installSSL') {
 		$data = rsssl_shell_installSSL();
 	}
 	return $data;
 }
+add_filter("rsssl_run_test", 'rsssl_shell_run_shell_install', 10, 3);
 
 /**
  * Install SSL using Shell, if possible
@@ -121,13 +130,11 @@ function rsssl_shell_installSSLPerDomain($domain){
 	} else if (function_exists('system')) {
 		ob_start();
 		system("uapi SSL install_ssl domain=$domain cert=$enc_cert key=$enc_key cabundle=$enc_cacert", $var);
-		$shell = ob_get_contents();
-		ob_end_clean();
+		$shell = ob_get_clean();
 	} else if (function_exists('passthru')) {
 		ob_start();
 		passthru("uapi SSL install_ssl domain=$domain cert=$enc_cert key=$enc_key cabundle=$enc_cacert", $var);
-		$shell = ob_get_contents();
-		ob_end_clean();
+		$shell = ob_get_clean();
 	} else if (function_exists('exec')) {
 		exec("uapi SSL install_ssl domain=$domain cert=$enc_cert key=$enc_key cabundle=$enc_cacert", $output, $var);
 		$shell = implode(',', $output);

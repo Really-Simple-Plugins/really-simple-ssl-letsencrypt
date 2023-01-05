@@ -24,6 +24,21 @@ function rsssl_shell_add_condition_actions($fields){
 }
 add_filter( 'rsssl_fields', 'rsssl_shell_add_condition_actions' );
 
+add_filter("rsssl_run_test", 'rsssl_shell_run_shell_install', 10, 3);
+function rsssl_shell_run_shell_install($data, $test, $request){
+	if ( ! current_user_can('manage_security') ) {
+		return new RSSSL_RESPONSE(
+			'error',
+			'stop',
+			__( "Permission denied.", 'really-simple-ssl' )
+		);
+	}
+	if ($test === 'rsssl_shell_installSSL') {
+		$data = rsssl_shell_installSSL();
+	}
+	return $data;
+}
+
 /**
  * Install SSL using Shell, if possible
  *
@@ -33,6 +48,7 @@ function rsssl_shell_installSSL(){
 
 	if ( rsssl_is_ready_for('installation') ) {
 		$domains = RSSSL_LE()->letsencrypt_handler->get_subjects();
+		$response = false;
 		if ( function_exists('shell_exec') || function_exists('system') || function_exists('passthru') || function_exists('exec') ) {
 			if ( is_array($domains) && count($domains)>0 ) {
 				foreach( $domains as $domain ) {
@@ -58,19 +74,20 @@ function rsssl_shell_installSSL(){
 			}
 
 			return $response;
-		} else {
-			$status = 'error';
-			$action = 'skip';
-			$message = rsssl_get_manual_instructions_text(RSSSL_LE()->letsencrypt_handler->ssl_installation_url);
-			return new RSSSL_RESPONSE($status, $action, $message);
 		}
 
-	} else {
-		$status = 'error';
-		$action = 'stop';
-		$message = __("The system is not ready for the installation yet. Please run the wizard again.", "really-simple-ssl-shell");
+		$status  = 'error';
+		$action  = 'skip';
+		$message = rsssl_get_manual_instructions_text(RSSSL_LE()->letsencrypt_handler->ssl_installation_url);
+
 		return new RSSSL_RESPONSE($status, $action, $message);
 	}
+
+	$status  = 'error';
+	$action  = 'stop';
+	$message = __("The system is not ready for the installation yet. Please run the wizard again.", "really-simple-ssl-shell");
+
+	return new RSSSL_RESPONSE($status, $action, $message);
 }
 
 /**
@@ -135,9 +152,10 @@ function rsssl_shell_installSSLPerDomain($domain){
 	if ($res_arr['status'] == 1) {
 		$message = sprintf(__("SSL successfully installed on %s","really-simple-ssl-shell"), $domain);
 		return new RSSSL_RESPONSE('success', 'continue', $message );
-	} else {
-		$message = rsssl_get_manual_instructions_text(RSSSL_LE()->letsencrypt_handler->ssl_installation_url);
-		return new RSSSL_RESPONSE('error', 'skip', $message );
 	}
+
+	$message = rsssl_get_manual_instructions_text(RSSSL_LE()->letsencrypt_handler->ssl_installation_url);
+
+	return new RSSSL_RESPONSE('error', 'skip', $message );
 
 }

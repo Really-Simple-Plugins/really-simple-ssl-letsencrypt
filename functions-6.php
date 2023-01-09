@@ -8,12 +8,13 @@ defined('ABSPATH') or die();
  */
 function rsssl_shell_add_condition_actions($fields){
 
-	$installation_index = array_search( 'installation', array_column( $fields, 'id' ) );
 	if ( rsssl_is_cpanel() ) {
+		$installation_index = array_search( 'installation', array_column( $fields, 'id' ) );
+		$fields[ $installation_index ]['actions'] = array();
 		if ( function_exists('shell_exec') || function_exists('system') || function_exists('passthru') || function_exists('exec') ) {
 			$fields[ $installation_index ]['actions'][] = [
 				'description' => __( "Attempting to install certificate using shell...", "really-simple-ssl-shell" ),
-				'action'      => 'rsssl_shell_installSSL',
+				'action'      => 'rsssl_shell_install_ssl',
 				'attempts'    => 1,
 				'status'      => 'inactive',
 			];
@@ -41,7 +42,7 @@ function rsssl_shell_run_shell_install($data, $test, $request){
 		);
 	}
 
-	if ($test === 'rsssl_shell_installSSL') {
+	if ($test === 'rsssl_shell_install_ssl') {
 		$data = rsssl_shell_installSSL();
 	}
 	return $data;
@@ -54,11 +55,10 @@ add_filter("rsssl_run_test", 'rsssl_shell_run_shell_install', 10, 3);
  * @return RSSSL_RESPONSE
  */
 function rsssl_shell_installSSL(){
-
 	if ( rsssl_is_ready_for('installation') ) {
-		$domains = RSSSL_LE()->letsencrypt_handler->get_subjects();
-		$response = false;
 		if ( function_exists('shell_exec') || function_exists('system') || function_exists('passthru') || function_exists('exec') ) {
+			$domains = RSSSL_LE()->letsencrypt_handler->get_subjects();
+			$response = false;
 			if ( is_array($domains) && count($domains)>0 ) {
 				foreach( $domains as $domain ) {
 					$response_item = rsssl_shell_installSSLPerDomain($domain);

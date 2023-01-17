@@ -3,7 +3,7 @@
  * Plugin Name: Really Simple SSL Shell Add on
  * Plugin URI: https://really-simple-ssl.com
  * Description: Add on for Really Simple SSL adding shell functionality to install SSL certificates
- * Version: 1.3
+ * Version: 2.0.0
  * Author: Really Simple Plugins
  * Author URI: https://really-simple-plugins.com
  * License: GPL2
@@ -23,7 +23,7 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 defined('ABSPATH') or die();
-define('rsssl_shell_version', '1.3');
+define('rsssl_shell_version', '2.0.0');
 
 if (!defined('rsssl_shell_path')) define('rsssl_shell_path', trailingslashit(plugin_dir_path(__FILE__)) );
 
